@@ -1,0 +1,603 @@
+---
+title: "STA380 - Exercise02"
+author: "Saswata Das, Anurag Agarwal, Sidhaarthan Velur Gopalakrishnan & Siddhant Shah"
+date: "18 August 2017"
+output: rmarkdown::github_document
+---
+
+
+###Part A
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+setwd("E:/Siddhant/UT Austin/Coursework/Summer/Intro to Predictive Modelling/Part 2 - James Scott/STA380/data")
+
+flights_raw =  read.csv("ABIA.csv", header = TRUE, sep = ",",)
+flights_raw$haul = ifelse(flights_raw$Distance<500,'Short Haul',ifelse(flights_raw$Distance<1000,'Medium Haul','Long Haul'))
+
+flights_raw['CarrierDelay'] = ifelse(flights_raw$CarrierDelay > 0, 1, 0)
+flights_raw['WeatherDelay'] = ifelse(flights_raw$WeatherDelay > 0, 1, 0)
+flights_raw['NASDelay'] = ifelse(flights_raw$NASDelay > 0, 1, 0)
+flights_raw['SecurityDelay'] = ifelse(flights_raw$SecurityDelay > 0, 1, 0)
+flights_raw['LateAircraftDelay'] = ifelse(flights_raw$LateAircraftDelay > 0, 1, 0)
+
+
+# Imputing NAs in carrier delays with 0 
+library(Hmisc)
+flights_raw$CarrierDelay = with(flights_raw, impute(CarrierDelay, 0))
+flights_raw$WeatherDelay = with(flights_raw, impute(WeatherDelay, 0))
+flights_raw$NASDelay = with(flights_raw, impute(NASDelay, 0))
+flights_raw$SecurityDelay = with(flights_raw, impute(SecurityDelay, 0))
+flights_raw$LateAircraftDelay = with(flights_raw, impute(LateAircraftDelay, 0))
+
+# Dropping missing values
+
+flights = subset(flights_raw, is.na(DepTime)==FALSE & is.na(ArrTime)==FALSE & is.na(ActualElapsedTime)==FALSE & is.na(AirTime)==FALSE & is.na(ArrDelay)==FALSE)
+
+flights$delayed = flights$CarrierDelay+flights$WeatherDelay+flights$NASDelay+flights$SecurityDelay+flights$LateAircraftDelay
+
+flights$delayed_ind = ifelse(flights$delayed>0, 1,0)
+
+# Subset only delayed flights
+
+flights_delayed = subset(flights, flights$delayed_ind==1)
+
+
+flights1 = subset(flights_delayed, DepDelay>0)
+
+flights2 = subset(flights_delayed, ArrDelay>0)
+```
+
+There are 3 dimensions that we have tried to analyse in the data:
+
+  - Delay by Flight Distance
+  - Delay by Time Periods
+  - Delay by Type of Delay
+
+--------
+
+####1. Delay by Flight Distance:
+
+For this, we have looked at which flights from which airports tend to be delayed at Austin. Below are the top 10 airports with most number of delayed flights to Austin in 2008: 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+#--------------------
+###Top 10 airports whose flights are delayed
+
+origin_counts = aggregate(flights$Origin, by = list(flights$Origin), FUN = length)
+new = c("Origin","total_flights")
+names(origin_counts) = new
+
+origin_counts_delayed = aggregate(flights_delayed$Origin, by = list(flights_delayed$Origin), FUN = length)
+new = c("Origin","delayed_flights")
+names(origin_counts_delayed) = new
+
+
+origin_delayed = merge(origin_counts,origin_counts_delayed,by='Origin')
+#head(origin_delayed) 
+
+origin_delayed$not_delayed = origin_delayed$total_flights - origin_delayed$delayed_flights
+
+
+origin_delayed = origin_delayed[order(-origin_delayed$delayed_flights),]
+#head(origin_delayed)
+origin_delayed = subset(origin_delayed, Origin!="AUS")
+#head(origin_delayed)
+
+top = origin_delayed[1:10,]
+#str(top)
+
+library(reshape2)
+top_melt = melt(top, id.vars=c("Origin"),
+            measure.vars=c("delayed_flights", "not_delayed"))
+#str(top_melt)
+top_melt$variable = factor(top_melt$variable , levels = c('not_delayed','delayed_flights'))
+
+library(ggplot2)
+
+ggplot(data=top_melt, aes(x=Origin, y=value, fill=variable)) + geom_bar(stat="identity") + labs(x='Origin',y='No. of Flights', col = "Check")+ scale_fill_manual(values = c("#009E73","#D55E00"))
+
+```
+
+
+From this, it can be observed that both Dallas airports and Houston seem to be in the top 3. However, the proportion of delayed flights to total number of flights for these airports is not as large as for Orlando and Atlanta. 
+
+This can be further validated by looking at delayed flights by distance, where flights are grouped into the following threee categories:
+
+- Short haul : Less than 500 miles
+- Medium haul : >500 but <1000 miles
+- Long haul: >1000 miles
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------
+###Distance vs avg departure delay
+
+haul = aggregate(flights$DepDelay, by = list(flights$haul), FUN = mean)
+new = c("Haul","delay")
+names(haul) = new
+
+
+ggplot(data=haul, aes(x=Haul, y=delay)) + geom_bar(stat="identity", width=0.3, fill="#D55E00") + labs(x='Flight type',y='Avg Delay Time')+ coord_cartesian(ylim = c(0, 12))
+
+
+```
+
+**This shows that short haul flights show lower delay times even if they are a lot more in number.** 
+
+--------
+
+#####2. Delay by Time Period:
+
+Let's now look at different time related variations of the delay time.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#-------------------------
+###Month of the year vs avg departure delay
+
+mth = aggregate(flights1$DepDelay, by = list(flights1$Month), FUN = mean)
+new = c("Month","delay")
+names(mth) = new
+
+
+ggplot(data=mth, aes(x=Month, y=delay)) + geom_bar(stat="identity") + labs(x='Month of the Year',y='Avg Delay Time') + scale_x_continuous(breaks = round(seq(min(mth$Month), max(mth$Month), by = 1),0)) + coord_cartesian(ylim = c(30, 60))
+
+```
+
+**Delays are longest in the months of June, July, August and December. These tend to be holiday periods (summer and christmas) when the passengers and air traffic is highest.**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------
+###Day of the month vs avg departure delay
+
+dayofmth = aggregate(flights1$DepDelay, by = list(flights1$DayofMonth), FUN = mean)
+new = c("DayOfMonth","delay")
+names(dayofmth) = new
+
+
+ggplot(data=dayofmth, aes(x=DayOfMonth, y=delay)) + geom_line(colour="red", size=1.5) + labs(x='Day of the Month',y='Avg Delay Time') + scale_x_continuous(breaks = round(seq(min(dayofmth$DayOfMonth), max(dayofmth$DayOfMonth), by = 1),0))
+
+```
+
+There are specific days during the month where there are peaks in terms of delay time. 
+**Usually mid-month tends to be the best time to travel since there are lesser delays and avoiding end of the month.**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------
+###Day of the week vs avg departure delay
+
+dayofwk = aggregate(flights1$DepDelay, by = list(flights1$DayOfWeek), FUN = mean)
+new = c("DayOfWeek","delay")
+names(dayofwk) = new
+
+
+ggplot(data=dayofwk, aes(x=DayOfWeek, y=delay)) + geom_bar(stat="identity") + labs(x='Day of the week',y='Avg Delay Time') + scale_x_continuous(breaks = round(seq(min(dayofwk$DayOfWeek), max(dayofwk$DayOfWeek), by = 1),0)) + coord_cartesian(ylim = c(40, 60))
+
+```
+
+**As expected, weekends tend to have longer delays when compared to the rest of the week.**
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------
+###Hour of day vs avg departure delay
+
+flights1$DepTime2 = round(flights1$DepTime/100,0)
+
+deptime = aggregate(flights1$DepDelay, by = list(flights1$DepTime2), FUN = mean)
+new = c("DepTime","delay")
+names(deptime) = new
+
+
+ggplot(data=deptime, aes(x=DepTime, y=delay)) + geom_line(colour="red", size=1.5) + labs(x='Hour of the day',y='Avg Delay Time') + scale_x_continuous(breaks = round(seq(min(deptime$DepTime), max(deptime$DepTime), by = 1),0))
+
+```
+
+**Flights between 8PM and 4AM tend to have longer delays possibly due to reduced traffic and airport related issues.** 
+
+We try to validate this by looking at the type of delay caused across different times during the day.
+
+
+--------
+
+####3.Delay by Type of Delay
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------------
+###Type of Delay vs Hour of day
+aggdata <-aggregate(flights1[c('CarrierDelay', 'WeatherDelay', 'NASDelay', 'SecurityDelay', 'LateAircraftDelay')], by=list(flights1$DepTime2), FUN=sum)
+
+colnames(aggdata)[which(names(aggdata) == "Group.1")] <- "HourOfDay"
+
+graph_ggplot = melt(aggdata, id.vars = c("HourOfDay"), measure.vars = c('CarrierDelay', 'WeatherDelay', 'NASDelay', 'SecurityDelay', 'LateAircraftDelay'))
+
+ggplot(data=graph_ggplot, aes(x=HourOfDay, y=value, title = 'Distribution of Delay Reasons by Hour of Day', fill=variable)) + geom_line(aes(color=variable))+ ggtitle('Distribution of Delay Reasons by Hour of Day') 
+
+```
+
+**This shows that in periods of longest delays i.e. post 8PM, carrier and NAS related issues contribute to these delays.**
+
+Let's finally look at how carriers rank in terms of departure and arrival delays: 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------
+###Carrier vs avg departure delay
+
+carr1 = aggregate(flights1$DepDelay, by = list(flights1$UniqueCarrier), FUN = length)
+new = c("Carrier","delayed_flights")
+names(carr1) = new
+
+carr2 = aggregate(flights1$DepDelay, by = list(flights1$UniqueCarrier), FUN = mean)
+new = c("Carrier","delay")
+names(carr2) = new
+
+carr_out = merge(carr1,carr2,by='Carrier')
+
+carr_out = subset(carr_out,carr_out$delayed_flights>50)
+
+carr_out$delay_by_flight = carr_out$delay/carr_out$delayed_flights
+
+ggplot(data=carr_out, aes(x=Carrier, y=delay_by_flight)) + geom_bar(stat="identity", width=0.5, fill='darkblue') + labs(x='Carrier',y='Delay time per delayed flight (departures)')
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align='center'}
+
+#--------------------
+###Carrier vs avg departure delay (arrivals)
+
+
+carr3 = aggregate(flights2$DepDelay, by = list(flights2$UniqueCarrier), FUN = length)
+new = c("Carrier","delayed_flights")
+names(carr3) = new
+
+carr4 = aggregate(flights2$DepDelay, by = list(flights2$UniqueCarrier), FUN = mean)
+new = c("Carrier","delay")
+names(carr4) = new
+
+carr_in = merge(carr3,carr4,by='Carrier')
+
+carr_in = subset(carr_in,carr_in$delayed_flights>50)
+
+carr_in$delay_by_flight = carr_in$delay/carr_in$delayed_flights
+
+ggplot(data=carr_in, aes(x=Carrier, y=delay_by_flight)) + geom_bar(stat="identity", width=0.5, fill='darkgray') + labs(x='Carrier',y='Delay time per delayed flight (arrival)')
+
+```
+
+**From both of the above charts, we observe that the delay time per flight is highest for US Air (US), Atlantic Southeast Airlines (EV) and Pinnacle Airlines (9E) carriers for flights flying in and out of Austin airport.**
+
+
+--------
+
+
+###Part B: AUTHOR ATTRITBUTION
+
+For this problem, we have built two different models. Both are Naive Bayes models, but the difference is in the way their Document Term Matrix has been constructed - 
+
+DTM for Model 1 -
+
+* Weighting : Term Frequency
+
+DTM for Model 2 - 
+
+* Weighting : Term Frequency - Inverse Term Frequency
+
+Load libraries
+
+```{r echo=TRUE}
+library(tm) 
+library(magrittr)
+library(class)
+library(caret)
+library(e1071)
+
+#Wrapper function
+readerPlain = function(fname){
+  readPlain(elem=list(content=readLines(fname)), id=fname, language='en') }
+```
+
+Read files from directory -
+```{r echo=TRUE}
+train = "E:/Siddhant/UT Austin/Coursework/Summer/Intro to Predictive Modelling/Part 2 - James Scott/STA380/data/ReutersC50/C50train"
+test = "E:/Siddhant/UT Austin/Coursework/Summer/Intro to Predictive Modelling/Part 2 - James Scott/STA380/data/ReutersC50/C50test/"
+file_list = Sys.glob(paste0(train,'/*/*.txt'))
+file_list_test = Sys.glob(paste0(test,'/*/*.txt'))
+authornames = list.dirs("E:/Siddhant/UT Austin/Coursework/Summer/Intro to Predictive Modelling/Part 2 - James Scott/STA380/data/ReutersC50/C50train", full.names = FALSE)[-1]
+
+classificationnames = rep(authornames, each=50)
+authors = lapply(file_list, readerPlain) 
+authors_test = lapply(file_list_test,readerPlain)
+
+mynames = file_list %>%
+{ strsplit(., '/', fixed=TRUE) } %>%
+{ lapply(., tail, n=2) } %>%
+{ lapply(., paste0, collapse = '') } %>%
+  unlist
+```
+
+Create Corpus for train and test documents -
+
+```{r echo=TRUE}
+names(authors) = mynames
+my_documents = Corpus(VectorSource(authors))
+
+mynamestest = file_list_test %>%
+{ strsplit(., '/', fixed=TRUE) } %>%
+{ lapply(., tail, n=2) } %>%
+{ lapply(., paste0, collapse = '') } %>%
+  unlist
+
+names(authors_test) = mynamestest
+my_documents_test = Corpus(VectorSource(authors_test))
+```
+
+Data Processing
+```{r echo=TRUE}
+#Train Corpus
+my_documents = tm_map(my_documents, content_transformer(tolower)) # make everything lowercase
+my_documents = tm_map(my_documents, content_transformer(removeNumbers)) # remove numbers
+my_documents = tm_map(my_documents, content_transformer(removePunctuation)) # remove punctuation
+my_documents = tm_map(my_documents, content_transformer(stripWhitespace)) ## remove excess white-space
+my_documents = tm_map(my_documents, content_transformer(removeWords), stopwords("en"))
+my_documents <- tm_map(my_documents, removeWords, c("character"))
+#Test Corpus
+my_documents_test = tm_map(my_documents_test, content_transformer(tolower)) # make everything lowercase
+my_documents_test = tm_map(my_documents_test, content_transformer(removeNumbers)) # remove numbers
+my_documents_test = tm_map(my_documents_test, content_transformer(removePunctuation)) # remove punctuation
+my_documents_test = tm_map(my_documents_test, content_transformer(stripWhitespace)) ## remove excess white-space
+my_documents_test = tm_map(my_documents_test, content_transformer(removeWords), stopwords("en"))
+my_documents_test <- tm_map(my_documents_test, removeWords, c("character"))
+```
+
+
+Create Document Term Matrix. Then treat for sparsity as follows - 
+
+* TF : 95%
+* TF-IDF : 99%
+
+```{r echo=TRUE}
+## Model 1 : DTM_TF 
+DTM_tf = DocumentTermMatrix(my_documents)
+DTM_tf = removeSparseTerms(DTM_tf, 0.95) #remove words that are not present in more than 95% articles
+DTM_tf_test = DocumentTermMatrix(my_documents_test)
+DTM_tf_test = removeSparseTerms(DTM_tf_test, 0.95)
+
+## Model 2 : DTM_TF_IDF
+DTM_tf_idf = DocumentTermMatrix(my_documents, control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+DTM_tf_idf = removeSparseTerms(DTM_tf_idf, 0.99)
+DTM_tf_idf_test = DocumentTermMatrix(my_documents_test, control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+DTM_tf_idf_test = removeSparseTerms(DTM_tf_idf_test, 0.99)
+```
+
+Create Dense Matrix and Normalize word frequency
+
+```{r echo=TRUE}
+#Train matrix for model 1 and model 2
+X.m1 = as.matrix(DTM_tf)
+X.m1 = X.m1/rowSums(X.m1)  # term-frequency weighting
+X.m2 = as.matrix(DTM_tf_idf)
+X.m2 = X.m2/rowSums(X.m2)
+#Test matrix for model 1 and model 2
+X.m1_test = as.matrix(DTM_tf_test)
+X.m1_test = X.m1_test/rowSums(X.m1_test)
+X.m2_test = as.matrix(DTM_tf_idf_test)
+X.m2_test = X.m2_test/rowSums(X.m2_test)
+
+#Convert matrix to dataframe
+mat_tf.df <- as.data.frame(X.m1, stringsAsfactors = FALSE)
+mat_tf.df$categorynb <- as.factor(classificationnames)
+
+mat_tf_test.df <- as.data.frame(X.m1_test, stringsAsfactors = FALSE)
+mat_tf_test.df$categorynb <- as.factor(classificationnames)
+
+mat_tf_idf.df <- as.data.frame(X.m2, stringsAsfactors = FALSE)
+mat_tf_idf.df$categorynb <- as.factor(classificationnames)
+
+mat_tf_idf_test.df <- as.data.frame(X.m2_test, stringsAsfactors = FALSE)
+mat_tf_idf_test.df$categorynb <- as.factor(classificationnames)
+```
+
+Set up the models -
+
+```{r echo=TRUE}
+#Model 1: TF
+model_tf <- naiveBayes(categorynb ~ ., data = mat_tf.df, laplace = 1)
+#Model 2 : TF-IDF
+model_tf_idf <- naiveBayes(categorynb ~ ., data = mat_tf_idf.df, laplace = 1)
+
+#Model 1 against test data
+preds_tf <- predict(model_tf, newdata = mat_tf_test.df)
+conf.mat.tf <- confusionMatrix(preds_tf, mat_tf_test.df$categorynb)
+conf.mat.tf$overall['Accuracy']
+
+#Model 2 against test data
+preds_tf_idf <- predict(model_tf_idf, newdata = mat_tf_idf_test.df)
+conf.mat.tf_idf <- confusionMatrix(preds_tf_idf, mat_tf_idf_test.df$categorynb)
+conf.mat.tf_idf$overall['Accuracy']
+```
+
+* Accuracy for Model 1 (TF) : 49%
+* Accuracy for Model 1 (TF-IDF) : 57%
+
+Both models are able to classify about half of the articles with their correct authors. But TF-IDF gives slightly higher accuracy than TF. It is probably because TF-IDF accounts for words that have not occured very frequently. 
+
+However, the disadvantage of using TF-IDF is that we need to keep higher number of words in our document term matrix which increases the time it takes to run the model. 
+
+
+------------
+
+###Part C
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+
+```{r,include=FALSE}
+
+library(arules)
+library(arulesViz)
+library(reshape)
+
+```
+
+#### Reading in the text file and wrangling to obtain the file 
+
+- Initially the file is present in a .txt file as comma separated values.
+- Since the number of items in each transaction, we used 50 as the maximum number of items and filled the ones without values with NA
+- The columns which have NAs completely were removed
+- Another column called User ID is created
+- The data is then reshaped to have both the User Id and the value along the rows
+- The values which are blank are then removed from the data
+- The unnecessary columns from the data are removed
+- The USER ID is then converted into a factor
+- Convert the data into a format that the **Apriori** algorithm accepts
+
+```{r}
+#Reading the text file into R with 50 columns because we do not know he maximum number of items in a basket
+
+setwd("E:/Siddhant/UT Austin/Coursework/Summer/Intro to Predictive Modelling/Part 2 - James Scott/STA380/data")
+
+grocery_basket <- read.table("groceries.txt", header = FALSE, sep = ",", col.names = paste0("V",seq_len(50)), fill = TRUE)
+
+#Removing the columns with NA values
+grocery_basket = grocery_basket[colSums(!is.na(grocery_basket)) > 0]
+
+#Creating a User ID column
+grocery_basket$User_ID <- seq.int(nrow(grocery_basket))
+
+#Melting data to get it into required format
+grocery_analysis = melt(grocery_basket,id=c("User_ID"))
+
+#Removing the column name
+grocery_analysis = grocery_analysis[,-c(2)]
+
+#Sorting the items by ID
+grocery_analysis_2 = grocery_analysis[order(grocery_analysis$User_ID),]
+
+#Removing rows with missing values
+grocery_analysis_3 = grocery_analysis_2[grocery_analysis_2$value != "",]
+
+#Summary statistics
+str(grocery_analysis_3)
+summary(grocery_analysis_3)
+
+#Turn User_ID into a factor
+grocery_analysis_3$User_ID = as.factor(grocery_analysis_3$User_ID)
+
+# First split data into a list of items for each person
+gorcery_data <- split(x=grocery_analysis_3$value, f=grocery_analysis_3$User_ID)
+
+## Remove duplicates ("de-dupe")
+unique_grocery <- lapply(gorcery_data, unique)
+
+## Cast this variable as a special arules "transactions" class.
+groctrans <- as(unique_grocery, "transactions")
+
+```
+
+
+#### Loop through different values of support and confidence  
+
+- Assign different values to support and confidence
+- Loop through and obtain the maximum lift for different combinations of support and confidence
+- Run through **Apriori** algorithm
+
+
+
+```{r eval=FALSE}
+#Now run the 'apriori' algorithm for different combinations of minsup and minconf
+
+sup= c(0.01,	0.015,	0.02,	0.025,	0.03,	0.035,	0.04,	0.045,	0.05)
+conf=c(0.3,	0.35,	0.4,	0.45,	0.5,	0.55,	0.6,	0.65,	0.7,	0.75)
+
+supnew=c()
+confnew=c()
+lift=c()
+
+for (i in sup){
+  for (j in conf){
+    grocery_rules <- apriori(groctrans, 
+                             parameter=list(support=i, confidence=j, maxlen=10))
+    df = as(grocery_rules, "data.frame")
+    supnew=c(supnew,i)
+    confnew=c(confnew,j)
+    lift=c(lift,max(df$lift))
+  }
+}
+fin = do.call(rbind, Map(data.frame, minsup=supnew, minconf=confnew, maxlift=lift))
+```
+
+```{r include=FALSE}
+#Now run the 'apriori' algorithm for different combinations of minsup and minconf
+
+sup= c(0.01,	0.015,	0.02,	0.025,	0.03,	0.035,	0.04,	0.045,	0.05)
+conf=c(0.3,	0.35,	0.4,	0.45,	0.5,	0.55,	0.6,	0.65,	0.7,	0.75)
+
+supnew=c()
+confnew=c()
+lift=c()
+
+for (i in sup){
+  for (j in conf){
+    grocery_rules <- apriori(groctrans, 
+                             parameter=list(support=i, confidence=j, maxlen=10))
+    df = as(grocery_rules, "data.frame")
+    supnew=c(supnew,i)
+    confnew=c(confnew,j)
+    lift=c(lift,max(df$lift))
+  }
+}
+fin = do.call(rbind, Map(data.frame, minsup=supnew, minconf=confnew, maxlift=lift))
+
+```
+
+
+
+### Exploring the best combination of Support-Lift-Confidence
+
+- By looking through the different combinations of Support-Confidence, select the best combination
+
+```{r include=TRUE}
+fin
+```
+
+The best combination of Support and Confidence was found to be 0.01 and 0.35 respectively with a maximum length of 10
+
+### Selecting the best combination
+
+```{r include=TRUE}
+grocery_rules <- apriori(groctrans, 
+                         parameter=list(support=0.01, confidence=0.35, maxlen=10))
+top = sort((subset(grocery_rules, subset=lift > 2)),by="lift")
+inspect(top)
+```
+
+The associations which were selected were the ones with a Lift > 2. When the data is sorted and inspected, we find that most of the items in the basket are related to customers buying Root Vegetables, Other Vegetables, Yogurt and Whole Milk
+
+
+```{r fig.width=12, fig.height=8}
+plot(grocery_rules)
+plot(top,method="grouped")
+plot(top,method="graph", control = list(type="items"))
+plot(top,method="paracoord", control = list(reorder=FALSE))
+```
+
+The scatter plot has support on the x-axis and confidence on the y-axis. It is seen that higher values of confidence seem to exist for lower values of suppoort. But there are a few points which have higher values of support and confidence. Provided they have enough assoications, they make for good values of support and confidence.
+
+The different plots give us an intuitive sense of the items on the basket which lead them to buying the item. The graphs help visualize the the associations between the items.
+
+The graph chart denotes the value of support through the size of the bubble, while the color intensity gives the value of lift.
+
+Similarly the parallel co-ordinates plot tell us the items on the left side which lead to us buying root vegetables, yogurt, other vegetables and whole milk, using lines and intensity of the color to represent the lift.
